@@ -5,9 +5,9 @@ import json
 import os
 import secrets
 from dotenv import load_dotenv
-from database.database_functions import save_user, get_user, save_message_count
-from utils.utils import hash_password
-from utils.utils import verify_password, get_salt_from_salt_server
+from src.database.database_functions import save_user, get_user, save_message_count
+from src.utils.utils import hash_password
+from src.utils.utils import verify_password, get_salt_from_salt_server
 
 
 '''

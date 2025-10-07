@@ -1,92 +1,74 @@
-import base64
+# src/client/client_request_handler.py
+import os
+import json
 import socket
 import ssl
-import json
-import os
 from dotenv import load_dotenv
-import secrets
 
-'''
-Este request handler se encarga principalmente del procesamiento de peticiones
-al servidor. Está compuesto únicamente por funciones que serán llamadas dentro
-del cliente. Las funciones están separadas en 2 por peticion; una para prepara
-los datos para su envío (PETICION_data_set_up), la otra se encarga del envío de la petición (request_handler).
-
-En el cliente, a la hora de hacer una petición se realizará de esta manera:
-    request_handler(PETICION_data_set_up())
-'''
-# VARIABLES DE ENTORNO DEL SERVIDOR 
+# Carga variables de entorno
 load_dotenv()
-HOST = str(os.getenv("SERVER_HOSTNAME"))
-PORT = os.getenv("SERVER_PORT")
 
-'''
-Lógica de las funciones de data_set_up:
-    Los datos se enviaran siempre como un diccionario que contiene todos los datos
-    que hacen falta. Dependiendo de la acción a realizar el contenido puede variar, 
-    pero siempre debe de contener la pareja "ACTION: ACCION_A_REALIZAR" para que el servidor
-    pueda diferenciar que petición está recibiendo y cómo procesarla
-
-    Obviamente cada acción pasa los parámetros oportunos que el servidor necesitará para
-    procesar la petición.
-'''
-# DATA SET UP SECTION
-def log_in_data_set_up(self):
-        username = self.entry_username.get()
-        psswd = self.entry_psswd.get()
-        data = {"ACTION": "LOGIN","U": username,"P": psswd}
-
-        return data
-
-def register_data_set_up(self):
-    username = self.entry_username.get()
-    psswd = self.entry_psswd.get()
-    data = {"ACTION": "REGISTER", "U": username, "P": psswd}
-
-    return data
+HOST = os.getenv("SERVER_HOSTNAME", "127.0.0.1")
+CONTROL_PORT = int(os.getenv("SERVER_PORT", "20000"))
+VPN_PORT = int(os.getenv("SERVER_VPN_PORT", str(CONTROL_PORT + 1)))
 
 
-def message_data_set_up(self, username, session_id):
-    mesagge = self.entry_message.get()
-    data = {"ACTION": "MESSAGE", "U" : username, "M": mesagge, "session_id": session_id} #self.session_id}
+def request_handler(data, host=HOST, port=CONTROL_PORT, cafile=None, timeout=10):
+    """
+    Envía una petición JSON (LOGIN, REGISTER, MESSAGE, LOGOUT) al servidor de control (TLS)
+    y devuelve la respuesta como dict.
+    """
+    if cafile is None:
+        # Intentamos localizar el crt relativo al proyecto
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # src/
+        possible = os.path.join(base_dir, "resources", "server.crt")
+        if os.path.exists(possible):
+            cafile = possible
+        else:
+            cafile = None
 
-    return data
+    try:
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        if cafile:
+            context.load_verify_locations(cafile=cafile)
+        else:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
 
-def log_out_data_set_up(session_id, username):
-     data = {"ACTION": "LOGOUT", "U": username,"session_id": session_id} # Logout no necesita información
-     return data
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with context.wrap_socket(sock, server_hostname=host) as ssock:
+                ssock.sendall(json.dumps(data).encode("utf-8"))
+                raw = ssock.recv(1048576)
+                try:
+                    response = json.loads(raw.decode("utf-8"))
+                except UnicodeDecodeError:
+                    print("[!] Received non-UTF8 response (protocol mismatch):", raw[:64])
+                    return {"status": "500", "message": "Protocol mismatch"}
+                return response
 
-# REQUEST HANDLER SECTION
-
-'''
-Las respuestas del servidor siguen una estructura fija para facilitar su
-entendimiento. Los datos se envían como un diccionario de 2 entradas: status y message.
-
-Se usa esta combinación de entradas para facilitar la lectura de las peticiones; utilizando una
-estructura semajante a HTTP con los códigos de estados, y un mensaje prefijado para saber que parte del
-código se está ejecutando.
-'''
-def request_handler(data):
-        try:
-            BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-            KEYSTORE_PATH = os.path.join(BASE_DIR, "..", "..", "resources", "server.crt")
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)  # Contexto TLS
-            context.load_verify_locations(cafile=KEYSTORE_PATH)
-            context.check_hostname = False  # Desactiva verificación de hostname (opcional)
-
-            with socket.create_connection((HOST, PORT)) as sock:
-                with context.wrap_socket(sock, server_hostname=HOST) as ssock:  # Envolver en TLS
-                    msg = json.dumps(data).encode("utf-8")
-                    ssock.sendall(msg)
-                    response = ssock.recv(1048576).decode()
-                    response = json.loads(response)
-                    print("Response: ", response)
-                    ssock.close()
-
-                    return response
-        except Exception as e:
-            print(f"Error en la request: {e}")
+    except Exception as e:
+        print(f"[!] Error en la request: {e}")
+        return {"status": "500", "message": "Error interno en cliente"}
 
 
+# ---------- Helper functions para la clase ClientSocket ----------
 
-        
+def log_in_data_set_up(client_instance):
+    username = client_instance.entry_username.get()
+    psswd = client_instance.entry_psswd.get()
+    return {"ACTION": "LOGIN", "U": username, "P": psswd}
+
+
+def register_data_set_up(client_instance):
+    username = client_instance.entry_username.get()
+    psswd = client_instance.entry_psswd.get()
+    return {"ACTION": "REGISTER", "U": username, "P": psswd}
+
+
+def message_data_set_up(client_instance, username, session_id):
+    message = client_instance.entry_message.get()
+    return {"ACTION": "MESSAGE", "U": username, "M": message, "session_id": session_id}
+
+
+def log_out_data_set_up(client_instance, session_id, username):
+    return {"ACTION": "LOGOUT", "U": username, "session_id": session_id}

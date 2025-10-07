@@ -1,6 +1,6 @@
-from database.setup_database import User, UserMessage
+from src.database.setup_database import User, UserMessage
 from datetime import datetime
-from utils.utils import save_salt_in_salt_server
+from src.utils.utils import save_salt_in_salt_server
 
 async def save_user(Session, lock, username, password, salt):
     async with lock:
