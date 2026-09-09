@@ -1,4 +1,4 @@
-# BYOD (Bring Your Own Device) usando Road Warrior VPN SSL
+# Simulación BYOD (Bring Your Own Device) usando Road Warrior VPN SSL
 
 ## Descripción
 
